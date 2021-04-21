@@ -37,10 +37,10 @@ Task 3: Create the thumbnail Cloud Function
 Supplied code has been copied into `supplied_index.js` and `supplied_package.json`
 
     mkdir thumbnail_func
-    cd thumbail_func
+    cd thumbnail_func
     
     cat ../supplied_index.js \
-    sed -e "s/REPLACE_WITH_YOUR_TOPIC ID/$TOPIC/" > index.js
+    | sed -e "s/REPLACE_WITH_YOUR_TOPIC ID/$TOPIC/" > index.js
 
     cp ../supplied_package.json package.json
 
@@ -76,4 +76,9 @@ Task 4: Remove the previous cloud engineer
     gcloud projects remove-iam-policy-binding  $GOOGLE_CLOUD_PROJECT\
       --member="user:name@gmail.com" \
       --role="roles/iam.serviceAccountUser"
+
+Set USER to the right user id
+
+    gcloud projects remove-iam-policy-binding  $GOOGLE_CLOUD_PROJECT\
+    --member="user:$USER" --role="roles/viewer"
 
