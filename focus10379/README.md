@@ -1,118 +1,79 @@
 See https://google.qwiklabs.com/focuses/10379
 
-Create a bucket
----------------
+Setup
+-----
 
-    export BUCKET=gs://chomskie-20210417142
-    gsutil mb $BUCKET
+> Create all resources in the us-east1 region and us-east1-b zone, unless otherwise directed.
+
+    gcloud config set compute/region us-east1
+    gcloud config set compute/zone us-east1-b
+
+
+
+Task1: Create a bucket
+----------------------
+
+> You need to create a bucket for the storage of the photographs.
+
+    export BUCKET_NAME=chomskie-20210417142
+    gsutil mb gs://$BUCKET_NAME
 
 
 Task 2: Create a pub/sub topic
 ------------------------------
 
-    gcloud pubsub topics create myTopic
+> Create a Pub/Sub topic for the Cloud Function to send messages.
+
+    export TOPIC=myTopic
+    gcloud pubsub topics create $TOPIC
 
 
-Task 3: Task 3: Create the thumbnail Cloud Function
----------------------------------------------------
+Task 3: Create the thumbnail Cloud Function
+-------------------------------------------
+
+> Create a Cloud Function that executes every time an object
+> is created in the bucket you created in task 1.
+
+Supplied code has been copied into `supplied_index.js` and `supplied_package.json`
 
     mkdir thumbnail_func
     cd thumbail_func
     
-    cat > index.js << EOF
-    /* globals exports, require */
-    //jshint strict: false
-    //jshint esversion: 6
-    "use strict";
-    const crc32 = require("fast-crc32c");
-    const gcs = require("@google-cloud/storage")();
-    const PubSub = require("@google-cloud/pubsub");
-    const imagemagick = require("imagemagick-stream");
-    
-    exports.thumbnail = (event, context) => {
-      const fileName = event.name;
-      const bucketName = event.bucket;
-      const size = "64x64"
-      const bucket = gcs.bucket(bucketName);
-      const topicName = "REPLACE_WITH_YOUR_TOPIC ID";
-      const pubsub = new PubSub();
-      if ( fileName.search("64x64_thumbnail") == -1 ){
-        // doesn't have a thumbnail, get the filename extension
-        var filename_split = fileName.split('.');
-        var filename_ext = filename_split[filename_split.length - 1];
-        var filename_without_ext = fileName.substring(0, fileName.length - filename_ext.length );
-        if (filename_ext.toLowerCase() == 'png' || filename_ext.toLowerCase() == 'jpg'){
-          // only support png and jpg at this point
-          console.log(`Processing Original: gs://${bucketName}/${fileName}`);
-          const gcsObject = bucket.file(fileName);
-          let newFilename = filename_without_ext + size + '_thumbnail.' + filename_ext;
-          let gcsNewObject = bucket.file(newFilename);
-          let srcStream = gcsObject.createReadStream();
-          let dstStream = gcsNewObject.createWriteStream();
-          let resize = imagemagick().resize(size).quality(90);
-          srcStream.pipe(resize).pipe(dstStream);
-          return new Promise((resolve, reject) => {
-            dstStream
-              .on("error", (err) => {
-                console.log(`Error: ${err}`);
-                reject(err);
-              })
-              .on("finish", () => {
-                console.log(`Success: ${fileName} → ${newFilename}`);
-                  // set the content-type
-                  gcsNewObject.setMetadata(
-                  {
-                    contentType: 'image/'+ filename_ext.toLowerCase()
-                  }, function(err, apiResponse) {});
-                  pubsub
-                    .topic(topicName)
-                    .publisher()
-                    .publish(Buffer.from(newFilename))
-                    .then(messageId => {
-                      console.log(`Message ${messageId} published.`);
-                    })
-                    .catch(err => {
-                      console.error('ERROR:', err);
-                    });
+    cat ../supplied_index.js \
+    sed -e "s/REPLACE_WITH_YOUR_TOPIC ID/$TOPIC/" > index.js
 
-              });
-          });
-        }
-        else {
-          console.log(`gs://${bucketName}/${fileName} is not an image I can handle`);
-        }
-      }
-      else {
-        console.log(`gs://${bucketName}/${fileName} already has a thumbnail`);
-      }
-    };
-    
-    EOF
+    cp ../supplied_package.json package.json
 
-    cat > package.json <<EOF
-    {
-      "name": "thumbnails",
-      "version": "1.0.0",
-      "description": "Create Thumbnail of uploaded image",
-      "scripts": {
-        "start": "node index.js"
-      },
-      "dependencies": {
-        "@google-cloud/storage": "1.5.1",
-        "@google-cloud/pubsub": "^0.18.0",
-        "fast-crc32c": "1.0.4",
-        "imagemagick-stream": "4.1.1"
-      },
-      "devDependencies": {},
-      "engines": {
-        "node": ">=4.3.2"
-      }
-    }
-    EOF
     
-    # Need commands to create the cloud function
+Create the cloud function.
+
+For background, see
+[Cloud Functions - Cloud Storage Tutorial](https://cloud.google.com/functions/docs/tutorials/storage)
+
+    gcloud functions deploy thumbnail \
+      --trigger-resource $BUCKET_NAME \
+      --trigger-event google.storage.object.finalize \
+      --runtime nodejs10
+    
+    gcloud functions describe thumbnail
+
+
+Testing - grab a jpg and copy it into the bucket.
 
     wget https://storage.googleapis.com/cloud-training/gsp315/map.jpg
     
-    gsutil cp map.jpg $BUCKET
+    gsutil cp map.jpg gs://$BUCKET_NAME
     
+    gcloud functions logs read --limit 50
+
+
+
+Task 4: Remove the previous cloud engineer
+------------------------------------------
+
+    gcloud projects get-iam-policy $GOOGLE_CLOUD_PROJECT
+
+    gcloud projects remove-iam-policy-binding  $GOOGLE_CLOUD_PROJECT\
+      --member="user:name@gmail.com" \
+      --role="roles/iam.serviceAccountUser"
+
